@@ -6,3 +6,4 @@
 *.log
 Makefile
 tags
+.idea

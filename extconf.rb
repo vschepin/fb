@@ -90,4 +90,8 @@ else
   libs.find {|lib| have_library(lib, test_func) }
 end
 
+basenames = %w{sbp utils service_mgr fb}
+$objs = basenames.map { |b| "#{b}.o" }
+$srcs = basenames.map { |b| "#{b}.c" }
+
 create_makefile("fb")

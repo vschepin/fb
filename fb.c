@@ -43,6 +43,8 @@
 #include <time.h>
 #include <stdbool.h>
 
+#include "utils.h"
+#include "service_mgr.h"
 
 #define	SQLDA_COLSINIT	50
 #define	SQLCODE_NOMORE	100
@@ -65,7 +67,6 @@ static VALUE rb_cFbConnection;
 static VALUE rb_cFbCursor;
 static VALUE rb_cFbSqlType;
 /* static VALUE rb_cFbGlobal; */
-static VALUE rb_eFbError;
 static VALUE rb_sFbField;
 static VALUE rb_sFbIndex;
 static VALUE rb_sFbColumn;
@@ -182,32 +183,6 @@ static long calculate_buffsize(XSQLDA *sqlda)
 
 	return offset + sizeof(short);
 }
-
-#if (FB_API_VER >= 20)
-static VALUE fb_error_msg(const ISC_STATUS *isc_status)
-{
-	char msg[1024];
-	VALUE result = rb_str_new(NULL, 0);
-	while (fb_interpret(msg, 1024, &isc_status))
-	{
-		result = rb_str_cat(result, msg, strlen(msg));
-		result = rb_str_cat(result, "\n", strlen("\n"));
-	}
-	return result;
-}
-#else
-static VALUE fb_error_msg(ISC_STATUS *isc_status)
-{
-	char msg[1024];
-	VALUE result = rb_str_new(NULL, 0);
-	while (isc_interprete(msg, &isc_status))
-	{
-		result = rb_str_cat(result, msg, strlen(msg));
-		result = rb_str_cat(result, "\n", strlen("\n"));
-	}
-	return result;
-}
-#endif
 
 struct time_object {
 	struct timeval tv;
@@ -446,35 +421,6 @@ static VALUE fb_sql_type_from_code(int code, int subtype)
 static VALUE sql_type_from_code(VALUE self, VALUE code, VALUE subtype)
 {
 	return fb_sql_type_from_code(NUM2INT(code), NUM2INT(subtype));
-}
-
-static void fb_error_check(ISC_STATUS *isc_status)
-{
-	if (isc_status[0] == 1 && isc_status[1]) {
-		char buf[1024];
-		VALUE exc, msg, msg1, msg2;
-		short code = isc_sqlcode(isc_status);
-
-		isc_sql_interprete(code, buf, 1024);
-		msg1 = rb_str_new2(buf);
-		msg2 = fb_error_msg(isc_status);
-		msg = rb_str_cat(msg1, "\n", strlen("\n"));
-		msg = rb_str_concat(msg, msg2);
-
-		exc = rb_exc_new3(rb_eFbError, msg);
-		rb_iv_set(exc, "error_code", INT2FIX(code));
-		rb_exc_raise(exc);
-	}
-}
-
-static void fb_error_check_warn(ISC_STATUS *isc_status)
-{
-	short code = isc_sqlcode(isc_status);
-	if (code != 0) {
-		char buf[1024];
-		isc_sql_interprete(code, buf, 1024);
-		rb_warning("%s(%d)", buf, code);
-	}
 }
 
 static XSQLDA* sqlda_alloc(long cols)
@@ -2353,17 +2299,6 @@ static VALUE cursor_fields(int argc, VALUE* argv, VALUE self)
 	}
 }
 
-/* call-seq:
- *   error_code -> int
- *
- * Returns the sqlcode associated with the error.
- */
-static VALUE error_error_code(VALUE error)
-{
-	rb_p(error);
-	return rb_iv_get(error, "error_code");
-}
-
 static char* dbp_create(long *length)
 {
 	char *dbp = ALLOC_N(char, 1);
@@ -2713,45 +2648,11 @@ static void define_attrs(VALUE klass, char **attrs)
 }
 */
 
-static VALUE default_string(VALUE hash, const char *key, const char *def)
-{
-	VALUE sym = ID2SYM(rb_intern(key));
-	VALUE val = rb_hash_aref(hash, sym);
-	return NIL_P(val) ? rb_str_new2(def) : StringValue(val);
-}
-
-static VALUE default_int(VALUE hash, const char *key, int def)
-{
-	VALUE sym = ID2SYM(rb_intern(key));
-	VALUE val = rb_hash_aref(hash, sym);
-	return NIL_P(val) ? INT2NUM(def) : val;
-}
-
 static VALUE database_allocate_instance(VALUE klass)
 {
 	NEWOBJ(obj, struct RObject);
 	OBJSETUP((VALUE)obj, klass, T_OBJECT);
 	return (VALUE)obj;
-}
-
-static VALUE hash_from_connection_string(VALUE cs)
-{
-	VALUE hash = rb_hash_new();
-	VALUE re_SemiColon = rb_reg_regcomp(rb_str_new2("\\s*;\\s*"));
-	VALUE re_Equal = rb_reg_regcomp(rb_str_new2("\\s*=\\s*"));
-	ID id_split = rb_intern("split");
-	VALUE pairs = rb_funcall(cs, id_split, 1, re_SemiColon);
-	int i;
-	for (i = 0; i < RARRAY_LEN(pairs); i++) {
-		VALUE pair = rb_ary_entry(pairs, i);
-		VALUE keyValue = rb_funcall(pair, id_split, 1, re_Equal);
-		if (RARRAY_LEN(keyValue) == 2) {
-			VALUE key = rb_ary_entry(keyValue, 0);
-			VALUE val = rb_ary_entry(keyValue, 1);
-			rb_hash_aset(hash, rb_str_intern(key), val);
-		}
-	}
-	return hash;
 }
 
 static void check_page_size(int page_size)
@@ -3003,12 +2904,12 @@ void Init_fb()
 	rb_cFbSqlType = rb_define_class_under(rb_mFb, "SqlType", rb_cData);
 	rb_define_singleton_method(rb_cFbSqlType, "from_code", sql_type_from_code, 2);
 
-	rb_eFbError = rb_define_class_under(rb_mFb, "Error", rb_eStandardError);
-	rb_define_method(rb_eFbError, "error_code", error_error_code, 0);
-
 	rb_sFbField = rb_struct_define("FbField", "name", "sql_type", "sql_subtype", "display_size", "internal_size", "precision", "scale", "nullable", "type_code", NULL);
 	rb_sFbIndex = rb_struct_define("FbIndex", "table_name", "index_name", "unique", "descending", "columns", NULL);
 	rb_sFbColumn = rb_struct_define("FbColumn", "name", "domain", "sql_type", "sql_subtype", "length", "precision", "scale", "default", "nullable", NULL);
+
+    init_utils(rb_mFb);
+	init_service_mgr(rb_mFb);
 
 	rb_require("date");
 	rb_require("time"); /* Needed as of Ruby 1.8.5 */
