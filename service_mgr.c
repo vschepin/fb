@@ -63,6 +63,7 @@ static const char* SERVICE_CONNECTION_PARMS[] = {
 	"@host",
 	"@username",
 	"@password",
+	"@role",
 	(char *)0
 };
 
@@ -109,6 +110,11 @@ static VALUE service_connection_users(VALUE self)
 
     sbp_t sbp = sbp_create();
     sbp_add_code(sbp, isc_action_svc_display_user);
+    VALUE role = rb_iv_get(self, "@role");
+    if(RB_TYPE_P(role, T_STRING)){
+        sbp_add_string(sbp, isc_spb_sql_role_name, 2, StringValuePtr(role));
+    }
+
     isc_service_start(svc_connection->isc_status, &svc_connection->handle, 0, sbp->size, sbp->buf);
     sbp_destroy(sbp);
 
@@ -204,6 +210,10 @@ static VALUE service_connection_user_op(char op_code, VALUE self, VALUE username
     sbp_t sbp = sbp_create();
     sbp_add_code(sbp, op_code);
     sbp_add_string(sbp, isc_spb_sec_username, 2, StringValuePtr(username));
+    VALUE role = rb_iv_get(self, "@role");
+    if(RB_TYPE_P(role, T_STRING)){
+        sbp_add_string(sbp, isc_spb_sql_role_name, 2, StringValuePtr(role));
+    }
 
     {
         VALUE password = rb_hash_aref(attrs, ID2SYM(rb_intern("password")));
@@ -302,6 +312,7 @@ static VALUE host_initialize(int argc, VALUE *argv, VALUE self)
 		rb_iv_set(self, "@host", host);
 		rb_iv_set(self, "@username", default_string(parms, "username", "sysdba"));
 		rb_iv_set(self, "@password", default_string(parms, "password", "masterkey"));
+		rb_iv_set(self, "@role", rb_hash_aref(parms, ID2SYM(rb_intern("role"))));
 	}
 	return self;
 }
@@ -374,6 +385,7 @@ void init_service_mgr(VALUE rb_mFb)
 	rb_define_attr(rb_cFbHost, "host", 1, 1);
 	rb_define_attr(rb_cFbHost, "username", 1, 1);
 	rb_define_attr(rb_cFbHost, "password", 1, 1);
+	rb_define_attr(rb_cFbHost, "role", 1, 1);
 	rb_define_method(rb_cFbHost, "connect", host_connect, 0);
 	rb_define_singleton_method(rb_cFbHost, "connect", host_s_connect, -1);
 
@@ -382,6 +394,7 @@ void init_service_mgr(VALUE rb_mFb)
 	rb_define_attr(rb_cFbServiceConnection, "database", 1, 1);
 	rb_define_attr(rb_cFbServiceConnection, "username", 1, 1);
 	rb_define_attr(rb_cFbServiceConnection, "password", 1, 1);
+	rb_define_attr(rb_cFbServiceConnection, "role", 1, 1);
 	rb_define_method(rb_cFbServiceConnection, "users", service_connection_users, 0);
 	rb_define_method(rb_cFbServiceConnection, "add_user", service_connection_add_user, 2);
 	rb_define_method(rb_cFbServiceConnection, "modify_user", service_connection_modify_user, 2);
