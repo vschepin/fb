@@ -52,6 +52,7 @@ void sbp_add_numeric(sbp_t sbp, char code, unsigned long n)
 {
     sbp_grow(sbp, 5);
     char *w_ptr = sbp->buf + sbp->size;
+    *w_ptr++ = code;
     ADD_SPB_NUMERIC(w_ptr, n);
     sbp->size += 5;
 }

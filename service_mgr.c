@@ -191,6 +191,86 @@ static VALUE service_connection_users(VALUE self)
     return result;
 }
 
+static VALUE service_connection_user_op(char op_code, VALUE self, VALUE username, VALUE attrs)
+{
+    Check_Type(username, T_STRING);
+    Check_Type(attrs, T_HASH);
+    struct FbServiceConnection *svc_connection;
+
+	Data_Get_Struct(self, struct FbServiceConnection, svc_connection);
+
+	fb_svc_connection_check(svc_connection);
+
+    sbp_t sbp = sbp_create();
+    sbp_add_code(sbp, op_code);
+    sbp_add_string(sbp, isc_spb_sec_username, 2, StringValuePtr(username));
+
+    {
+        VALUE password = rb_hash_aref(attrs, ID2SYM(rb_intern("password")));
+        if(!NIL_P(password)){
+            Check_Type(password, T_STRING);
+            sbp_add_string(sbp, isc_spb_sec_password, 2, StringValuePtr(password));
+        }
+    }
+    {
+        VALUE first_name = rb_hash_aref(attrs, ID2SYM(rb_intern("first_name")));
+        if(!NIL_P(first_name)){
+            Check_Type(first_name, T_STRING);
+            sbp_add_string(sbp, isc_spb_sec_firstname, 2, StringValuePtr(first_name));
+        }
+    }
+    {
+        VALUE middle_name = rb_hash_aref(attrs, ID2SYM(rb_intern("middle_name")));
+        if(!NIL_P(middle_name)){
+            Check_Type(middle_name, T_STRING);
+            sbp_add_string(sbp, isc_spb_sec_middlename, 2, StringValuePtr(middle_name));
+        }
+    }
+    {
+        VALUE last_name = rb_hash_aref(attrs, ID2SYM(rb_intern("last_name")));
+        if(!NIL_P(last_name)){
+            Check_Type(last_name, T_STRING);
+            sbp_add_string(sbp, isc_spb_sec_lastname, 2, StringValuePtr(last_name));
+        }
+    }
+    {
+        VALUE user_id = rb_hash_aref(attrs, ID2SYM(rb_intern("user_id")));
+        if(!NIL_P(user_id)){
+            Check_Type(user_id, T_FIXNUM);
+            sbp_add_numeric(sbp, isc_spb_sec_userid, NUM2ULONG(user_id));
+        }
+    }
+    {
+        VALUE group_id = rb_hash_aref(attrs, ID2SYM(rb_intern("group_id")));
+        if(!NIL_P(group_id)){
+            Check_Type(group_id, T_FIXNUM);
+            sbp_add_numeric(sbp, isc_spb_sec_groupid, NUM2ULONG(group_id));
+        }
+    }
+
+    isc_service_start(svc_connection->isc_status, &svc_connection->handle, 0, sbp->size, sbp->buf);
+    sbp_destroy(sbp);
+
+    fb_error_check(svc_connection->isc_status);
+
+    return Qnil;
+}
+
+static VALUE service_connection_modify_user(VALUE self, VALUE username, VALUE attrs)
+{
+    return service_connection_user_op(isc_action_svc_modify_user, self, username, attrs);
+}
+
+static VALUE service_connection_add_user(VALUE self, VALUE username, VALUE attrs)
+{
+    return service_connection_user_op(isc_action_svc_add_user, self, username, attrs);
+}
+
+static VALUE service_connection_delete_user(VALUE self, VALUE username)
+{
+    return service_connection_user_op(isc_action_svc_delete_user, self, username, rb_hash_new());
+}
+
 static VALUE host_allocate_instance(VALUE klass)
 {
 	NEWOBJ(obj, struct RObject);
@@ -303,6 +383,9 @@ void init_service_mgr(VALUE rb_mFb)
 	rb_define_attr(rb_cFbServiceConnection, "username", 1, 1);
 	rb_define_attr(rb_cFbServiceConnection, "password", 1, 1);
 	rb_define_method(rb_cFbServiceConnection, "users", service_connection_users, 0);
+	rb_define_method(rb_cFbServiceConnection, "add_user", service_connection_add_user, 2);
+	rb_define_method(rb_cFbServiceConnection, "modify_user", service_connection_modify_user, 2);
+	rb_define_method(rb_cFbServiceConnection, "delete_user", service_connection_delete_user, 1);
 	rb_define_method(rb_cFbServiceConnection, "close", service_connection_close, 0);
 
 	rb_cFbUser = rb_define_class_under(rb_mFb, "User", rb_cData);
