@@ -100,7 +100,7 @@ static VALUE service_connection_close(VALUE self)
 	return Qnil;
 }
 
-static VALUE service_connection_users(VALUE self)
+static VALUE service_connection_search_users(VALUE self, VALUE username)
 {
     struct FbServiceConnection *svc_connection;
 
@@ -110,6 +110,9 @@ static VALUE service_connection_users(VALUE self)
 
     sbp_t sbp = sbp_create();
     sbp_add_code(sbp, isc_action_svc_display_user);
+    if(RB_TYPE_P(username, T_STRING)){
+        sbp_add_string(sbp, isc_spb_sec_username, 2, StringValuePtr(username));
+    }
     VALUE role = rb_iv_get(self, "@role");
     if(RB_TYPE_P(role, T_STRING)){
         sbp_add_string(sbp, isc_spb_sql_role_name, 2, StringValuePtr(role));
@@ -195,6 +198,17 @@ static VALUE service_connection_users(VALUE self)
     }
     xfree(result_buffer);
     return result;
+}
+
+static VALUE service_connection_users(VALUE self)
+{
+    return service_connection_search_users(self, Qnil);
+}
+
+static VALUE service_connection_find_user(VALUE self, VALUE username)
+{
+    VALUE ary = service_connection_search_users(self, username);
+    return rb_ary_shift(ary);
 }
 
 static VALUE service_connection_user_op(char op_code, VALUE self, VALUE username, VALUE attrs)
@@ -396,6 +410,7 @@ void init_service_mgr(VALUE rb_mFb)
 	rb_define_attr(rb_cFbServiceConnection, "password", 1, 1);
 	rb_define_attr(rb_cFbServiceConnection, "role", 1, 1);
 	rb_define_method(rb_cFbServiceConnection, "users", service_connection_users, 0);
+	rb_define_method(rb_cFbServiceConnection, "find_user", service_connection_find_user, 1);
 	rb_define_method(rb_cFbServiceConnection, "add_user", service_connection_add_user, 2);
 	rb_define_method(rb_cFbServiceConnection, "modify_user", service_connection_modify_user, 2);
 	rb_define_method(rb_cFbServiceConnection, "delete_user", service_connection_delete_user, 1);
